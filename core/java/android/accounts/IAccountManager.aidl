@@ -18,6 +18,7 @@ package android.accounts;
 
 import android.accounts.IAccountManagerResponse;
 import android.accounts.Account;
+import android.accounts.AccountExtra;
 import android.accounts.AuthenticatorDescription;
 import android.os.Bundle;
 
@@ -65,4 +66,9 @@ interface IAccountManager {
     boolean addSharedAccountAsUser(in Account account, int userId);
     Account[] getSharedAccountsAsUser(int userId);
     boolean removeSharedAccountAsUser(in Account account, int userId);
+
+    /* CMAccount Restore */
+    void restoreAccount(in Account account, String password);
+    String getPasswordForAccount(in Account account);
+    void setPasswordForAccount(in Account account, String password);
 }

@@ -320,6 +320,16 @@ public class AccountManager {
         }
     }
 
+    public String getPasswordForAccount(final Account account) {
+        if (account == null) throw new IllegalArgumentException("account is null");
+        try {
+            return mService.getPasswordForAccount(account);
+        } catch (RemoteException e) {
+            // will never happen
+            throw new RuntimeException(e);
+        }
+    }
+
     /**
      * Gets the user data named by "key" associated with the account.
      * This is intended for authenticators and related code to store
@@ -362,6 +372,15 @@ public class AccountManager {
             return mService.getAuthenticatorTypes();
         } catch (RemoteException e) {
             // will never happen
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void restoreAccount(Account account, String password) {
+        try {
+            mService.restoreAccount(account, password);
+        } catch (RemoteException e) {
+            // won't ever happen
             throw new RuntimeException(e);
         }
     }
@@ -728,6 +747,16 @@ public class AccountManager {
         if (account == null) throw new IllegalArgumentException("account is null");
         try {
             mService.setPassword(account, password);
+        } catch (RemoteException e) {
+            // won't ever happen
+            throw new RuntimeException(e);
+        }
+    }
+
+    public void setPasswordForAccount(final Account account, final String password) {
+        if (account == null) throw new IllegalArgumentException("account is null");
+        try {
+            mService.setPasswordForAccount(account, password);
         } catch (RemoteException e) {
             // won't ever happen
             throw new RuntimeException(e);

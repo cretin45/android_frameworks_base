@@ -17,17 +17,7 @@
 package com.android.server.accounts;
 
 import android.Manifest;
-import android.accounts.Account;
-import android.accounts.AccountAndUser;
-import android.accounts.AccountAuthenticatorResponse;
-import android.accounts.AccountManager;
-import android.accounts.AuthenticatorDescription;
-import android.accounts.CantAddAccountActivity;
-import android.accounts.GrantCredentialsPermissionActivity;
-import android.accounts.IAccountAuthenticator;
-import android.accounts.IAccountAuthenticatorResponse;
-import android.accounts.IAccountManager;
-import android.accounts.IAccountManagerResponse;
+import android.accounts.*;
 import android.app.ActivityManager;
 import android.app.ActivityManagerNative;
 import android.app.AppGlobals;
@@ -80,14 +70,7 @@ import com.google.android.collect.Sets;
 import java.io.File;
 import java.io.FileDescriptor;
 import java.io.PrintWriter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -292,6 +275,13 @@ public class AccountManagerService
         }
     }
 
+    private void reInitUser() {
+        synchronized (mUsers) {
+            mUsers.clear();
+            getUserAccountsForCaller();
+        }
+    }
+
     private void purgeOldGrantsAll() {
         synchronized (mUsers) {
             for (int i = 0; i < mUsers.size(); i++) {
@@ -480,6 +470,18 @@ public class AccountManagerService
         }
     }
 
+    public String getPasswordForAccount(Account account) {
+        if (account == null) throw new IllegalArgumentException("account is null");
+
+        UserAccounts accounts = getUserAccountsForCaller();
+        long identityToken = clearCallingIdentity();
+        try {
+            return readPasswordInternal(accounts, account);
+        } finally {
+            restoreCallingIdentity(identityToken);
+        }
+    }
+
     private String readPasswordInternal(UserAccounts accounts, Account account) {
         if (account == null) {
             return null;
@@ -515,6 +517,17 @@ public class AccountManagerService
         long identityToken = clearCallingIdentity();
         try {
             return readUserDataInternal(accounts, account, key);
+        } finally {
+            restoreCallingIdentity(identityToken);
+        }
+    }
+
+    public AccountExtra[] getUserDataForAccount(Account account) {
+        if (account == null) throw new IllegalArgumentException("account is null");
+        UserAccounts accounts = getUserAccountsForCaller();
+        long identityToken = clearCallingIdentity();
+        try {
+            return readUserDataInternal(accounts, account);
         } finally {
             restoreCallingIdentity(identityToken);
         }
@@ -1069,6 +1082,17 @@ public class AccountManagerService
         }
         if (account == null) throw new IllegalArgumentException("account is null");
         checkAuthenticateAccountsPermission(account);
+        UserAccounts accounts = getUserAccountsForCaller();
+        long identityToken = clearCallingIdentity();
+        try {
+            setPasswordInternal(accounts, account, password);
+        } finally {
+            restoreCallingIdentity(identityToken);
+        }
+    }
+
+    public void setPasswordForAccount(Account account, String password) {
+        if (account == null) throw new IllegalArgumentException("account is null");
         UserAccounts accounts = getUserAccountsForCaller();
         long identityToken = clearCallingIdentity();
         try {
@@ -1843,6 +1867,8 @@ public class AccountManagerService
         UserAccounts accounts = getUserAccounts(userId);
         ArrayList<Account> accountList = new ArrayList<Account>();
         Cursor cursor = null;
+
+
         try {
             cursor = accounts.openHelper.getReadableDatabase()
                     .query(TABLE_SHARED_ACCOUNTS, new String[]{ACCOUNTS_NAME, ACCOUNTS_TYPE},
@@ -1863,6 +1889,19 @@ public class AccountManagerService
         Account[] accountArray = new Account[accountList.size()];
         accountList.toArray(accountArray);
         return accountArray;
+    }
+
+    @Override
+    public void restoreAccount(Account account, String password) {
+                UserAccounts userAccounts = getUserAccountsForCaller();
+                // fails if the account already exists
+                long identityToken = clearCallingIdentity();
+                try {
+                    addAccountInternal(userAccounts, account, password, null, false);
+                    reInitUser();
+                } finally {
+                    restoreCallingIdentity(identityToken);
+                }
     }
 
     @Override
@@ -2917,6 +2956,40 @@ public class AccountManagerService
                 accounts.authTokenCache.put(account, authTokensForAccount);
             }
             return authTokensForAccount.get(authTokenType);
+        }
+    }
+
+    private AccountExtra[] readUserDataInternal(UserAccounts accounts, Account account) {
+        synchronized (accounts.cacheLock) {
+            final SQLiteDatabase db = accounts.openHelper.getReadableDatabase();
+            Cursor cursor = db.query(TABLE_EXTRAS,
+                    COLUMNS_EXTRAS_KEY_AND_VALUE,
+                    SELECTION_USERDATA_BY_ACCOUNT,
+                    new String[]{account.name, account.type},
+                    null, null, null);
+            HashMap<String, String> userDataForAccount = new HashMap<String, String>();
+            try {
+                while (cursor.moveToNext()) {
+                    final String tmpkey = cursor.getString(0);
+                    final String value = cursor.getString(1);
+                    if (value != null && value.length() > 0 && !tmpkey.startsWith("EXP") && !tmpkey.startsWith("perm")) {
+                        Log.d(TAG, "Adding extras {key=" + tmpkey + ", val=" + value + "}");
+                        userDataForAccount.put(tmpkey, value);
+                    }
+                }
+            } finally {
+                cursor.close();
+            }
+            Set<String> keys = userDataForAccount.keySet();
+            AccountExtra[] extras = new AccountExtra[keys.size()];
+            int i = 0;
+            for (String key : keys) {
+                Log.d(TAG, "Adding extras {key=" + key + ", val=" + userDataForAccount.get(key) + "}");
+                AccountExtra accountExtra = new AccountExtra(key, userDataForAccount.get(key));
+                extras[i] = accountExtra;
+                i++;
+            }
+            return extras;
         }
     }
 
